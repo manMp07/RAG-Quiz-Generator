@@ -5,7 +5,6 @@ import faiss
 from sentence_transformers import SentenceTransformer
 from openai import OpenAI
 import time
-#import google.generativeai as genai
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
@@ -17,11 +16,86 @@ from sklearn.metrics.pairwise import cosine_similarity
 import hashlib
 import os
 import pickle
+import cv2
+
+# NEW: EasyOCR for handwritten notes (pure Python, no system deps)
+import easyocr
+from PIL import Image
 
 # ------------------------------
-# Helpers: PDF text extraction
+# OCR Helper Functions (using EasyOCR)
 # ------------------------------
-def extract_text_from_pdf(file):
+@st.cache_resource
+def get_easyocr_reader(lang_list=['en']):
+    """Initialize EasyOCR reader (cached to avoid reloading models)."""
+    return easyocr.Reader(lang_list, gpu=False)  # set gpu=True if you have CUDA
+
+def extract_text_from_handwritten_pdf(pdf_bytes, ocr_lang='en', zoom=4.0, preprocessing='adaptive'):
+    """
+    Extract text from handwritten PDF with image preprocessing.
+    - zoom: scaling factor (higher = better resolution, slower)
+    - preprocessing: 'none', 'binary', 'adaptive'
+    """
+    try:
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        full_text = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        reader = get_easyocr_reader([ocr_lang])
+
+        for page_num in range(len(doc)):
+            status_text.text(f"OCR processing page {page_num+1}/{len(doc)}...")
+            page = doc[page_num]
+            
+            # Render with higher resolution
+            mat = fitz.Matrix(zoom, zoom)
+            pix = page.get_pixmap(matrix=mat, alpha=False)
+            
+            # Convert pixmap to numpy array (RGB)
+            img_array = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, 3)
+            
+            # Convert RGB to BGR for OpenCV (or keep RGB, but OpenCV uses BGR)
+            img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
+            
+            # Preprocessing
+            if preprocessing != 'none':
+                gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+                
+                if preprocessing == 'binary':
+                    # Simple binary threshold
+                    _, thresh = cv2.threshold(gray, 128, 255, cv2.THRESH_BINARY)
+                    processed = thresh
+                elif preprocessing == 'adaptive':
+                    # Adaptive thresholding (handles uneven lighting)
+                    processed = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                                       cv2.THRESH_BINARY, 11, 2)
+                # Convert back to RGB (EasyOCR expects 3 channels? Actually it handles grayscale too)
+                # But to be safe, convert to 3-channel
+                processed = cv2.cvtColor(processed, cv2.COLOR_GRAY2RGB)
+            else:
+                processed = img_bgr
+
+            # Run EasyOCR
+            result = reader.readtext(processed, detail=0, paragraph=True)
+            page_text = "\n".join(result)
+            full_text.append(page_text)
+            
+            progress_bar.progress((page_num + 1) / len(doc))
+        
+        status_text.text("OCR completed!")
+        progress_bar.empty()
+        doc.close()
+        return "\n".join(full_text)
+    except Exception as e:
+        st.error(f"OCR failed: {str(e)}")
+        return ""
+
+# ------------------------------
+# PDF text extraction (printed)
+# ------------------------------
+def extract_text_from_printed_pdf(file):
+    """Extract text from a digitally born PDF using PyMuPDF."""
     doc = fitz.open(stream=file.read(), filetype="pdf")
     texts = []
     for page in doc:
@@ -50,7 +124,7 @@ def chunk_text(text, chunk_size=900, overlap=50):
 # ------------------------------
 # Readable Text File Creation
 # ------------------------------
-def create_readable_chunks_file(pdf_hash, chunks, storage_dir="faiss_storage"): 
+def create_readable_chunks_file(pdf_hash, chunks, storage_dir):
     """Create readable text file with 5 chunks"""
     chunks_file = f"{storage_dir}/{pdf_hash}_chunks.txt"
     
@@ -61,7 +135,7 @@ def create_readable_chunks_file(pdf_hash, chunks, storage_dir="faiss_storage"):
         f.write(f"Size of each chunk: {len(chunks[0].split())}\n")
         f.write(f"Showing first 5 chunks below:\n\n")
         
-        # Write first 5 chunks (full 900-word chunks)
+        # Write first 5 chunks
         for i in range(min(5, len(chunks))):
             f.write(f"CHUNK {i+1}:\n")
             f.write(f"Character Count: {len(chunks[i])}\n")
@@ -70,7 +144,7 @@ def create_readable_chunks_file(pdf_hash, chunks, storage_dir="faiss_storage"):
     print(f"Created readable chunks file: {chunks_file}")
     return chunks_file
 
-def create_readable_vectors_file(pdf_hash, embeddings, storage_dir="faiss_storage"):
+def create_readable_vectors_file(pdf_hash, embeddings, storage_dir):
     """Create readable text file with 5 full vectors"""
     vectors_file = f"{storage_dir}/{pdf_hash}_vectors.txt"
     
@@ -82,11 +156,8 @@ def create_readable_vectors_file(pdf_hash, embeddings, storage_dir="faiss_storag
         f.write(f"Showing first 5 vectors with all 384 dimensions:\n\n")
         f.write("=" * 80 + "\n\n")
         
-        # Write first 5 vectors (all 384 dimensions)
         for i in range(min(5, len(embeddings))):
             f.write(f"VECTOR {i+1} (All 384 dimensions):\n")
-            
-            # Write all 384 dimensions
             f.write("[ ")
             for j, value in enumerate(embeddings[i]):
                 f.write(f"{value:.6f} ")
@@ -102,7 +173,7 @@ def create_readable_vectors_file(pdf_hash, embeddings, storage_dir="faiss_storag
 def load_embedding_model():
     return SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 
-def build_faiss_index(chunks, embedder, pdf_hash=None):
+def build_faiss_index(chunks, embedder, pdf_hash=None, storage_dir=None):
     """Build FAISS index and automatically create readable text files"""
     embeddings = embedder.encode(chunks, convert_to_numpy=True, show_progress_bar=True)
     dim = embeddings.shape[1]
@@ -110,14 +181,11 @@ def build_faiss_index(chunks, embedder, pdf_hash=None):
     faiss.normalize_L2(embeddings)
     index.add(embeddings.astype(np.float32))
     
-    # Save to disk if pdf_hash is provided
-    if pdf_hash:
-        storage_dir = ensure_storage_dir()
-        
+    if pdf_hash and storage_dir:
         # Save FAISS binary files
         save_faiss_to_disk(pdf_hash, index, chunks, storage_dir)
         
-        # ✅ AUTOMATICALLY CREATE READABLE TEXT FILES
+        # Create readable text files
         create_readable_chunks_file(pdf_hash, chunks, storage_dir)
         create_readable_vectors_file(pdf_hash, embeddings, storage_dir)
     
@@ -130,59 +198,48 @@ def search_chunks(query, chunks, index, embedder, top_k=4):
     return [chunks[i] for i in I[0]]
 
 # -----------------------------
-# Creating Storage Directory
+# Storage Directory (note‑type aware)
 # -----------------------------
-def ensure_storage_dir():
-    """Create directory for storing FAISS files if it doesn't exist"""
-    os.makedirs("faiss_storage", exist_ok=True)
-    return "faiss_storage"
+def ensure_storage_dir(note_type="printed"):
+    """Create directory for storing FAISS files based on note type."""
+    sub_dir = note_type.lower().replace(" ", "_")
+    path = os.path.join("faiss_storage", sub_dir)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 # ------------------------------
 # FAISS File Storage Functions
 # ------------------------------
 def get_pdf_hash(pdf_file):
     """Generate unique hash for PDF file"""
-    pdf_file.seek(0)  # Reset file pointer
+    pdf_file.seek(0)
     pdf_content = pdf_file.read()
-    pdf_file.seek(0)  # Reset again for future use
+    pdf_file.seek(0)
     return hashlib.md5(pdf_content).hexdigest()
 
-def save_faiss_to_disk(pdf_hash, index, chunks, storage_dir="faiss_storage"):
+def save_faiss_to_disk(pdf_hash, index, chunks, storage_dir):
     """Save FAISS index and chunks to disk"""
-    # Save FAISS index
     faiss.write_index(index, f"{storage_dir}/{pdf_hash}.faiss")
-    
-    # Save chunks
     with open(f"{storage_dir}/{pdf_hash}_chunks.pkl", "wb") as f:
         pickle.dump(chunks, f)
-    
-    print(f"✅ Saved FAISS index for PDF: {pdf_hash}")
+    print(f"✅ Saved FAISS index for PDF: {pdf_hash} in {storage_dir}")
 
-def load_faiss_from_disk(pdf_hash, storage_dir="faiss_storage"):
+def load_faiss_from_disk(pdf_hash, storage_dir):
     """Load FAISS index and chunks from disk if they exist"""
     index_path = f"{storage_dir}/{pdf_hash}.faiss"
     chunks_path = f"{storage_dir}/{pdf_hash}_chunks.pkl"
     
     if os.path.exists(index_path) and os.path.exists(chunks_path):
         try:
-            # Load FAISS index
             index = faiss.read_index(index_path)
-            
-            # Load chunks
             with open(chunks_path, "rb") as f:
                 chunks = pickle.load(f)
-            
             print(f"✅ Loaded cached FAISS index for PDF: {pdf_hash}")
             return index, chunks
         except Exception as e:
             print(f"❌ Error loading cached index: {e}")
             return None, None
-    
     return None, None
-
-def is_faiss_cached(pdf_hash, storage_dir="faiss_storage"):
-    """Check if FAISS index exists for this PDF"""
-    return os.path.exists(f"{storage_dir}/{pdf_hash}.faiss")
 
 # ------------------------------
 # Sample Questions for Difficulty Levels
@@ -401,7 +458,7 @@ def get_question_fingerprint(mcq_data):
     return hashlib.md5(content.encode()).hexdigest()
 
 # ------------------------------
-# LLM: Gemini Pro
+# LLM: Groq
 # ------------------------------
 @st.cache_resource
 def get_groq_client():
@@ -699,7 +756,9 @@ def generate_difficulty_quiz(difficulty, num_questions, chunks, index, embedder,
     
     return quiz
 
-# Pdf Convert
+# ------------------------------
+# PDF Generation for Quiz
+# ------------------------------
 def make_quiz_pdf(quiz, title="Generated MCQ Quiz"):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
@@ -764,13 +823,28 @@ def make_quiz_pdf(quiz, title="Generated MCQ Quiz"):
 # ------------------------------
 # Streamlit App (Modified)
 # ------------------------------
-st.set_page_config(page_title="RAG Quiz Generator", page_icon="sparkles.png", layout="wide")
+st.set_page_config(page_title="RAG Quiz Generator", page_icon="📝", layout="wide")
 st.title("Enhanced RAG Quiz Generator with Difficulty Levels")
 
 with st.sidebar:
     st.header("Upload & Settings")
     pdf_file = st.file_uploader("Upload a PDF document", type=["pdf"])
     
+    # NEW: Note type selection
+    note_type = st.radio(
+        "Type of Notes",
+        options=["Printed Notes", "Handwritten Notes"],
+        index=0,
+        help="Printed notes use direct text extraction (fast). Handwritten notes use EasyOCR (pure Python)."
+    )
+    
+    # OCR language option for handwritten notes
+    ocr_lang = "en"
+    if note_type == "Handwritten Notes":
+        ocr_lang = st.text_input("OCR Language (e.g., en, hi)", value="en")
+        zoom = st.slider("Image Zoom (resolution)", min_value=2.0, max_value=6.0, value=4.0, step=0.5, help="Higher zoom improves accuracy but slows down processing.")
+        preprocess = st.selectbox("Image Preprocessing", ["none", "binary", "adaptive"], index=2, help="'binary' = simple black/white threshold; 'adaptive' = best for handwriting.")
+        
     # Course selection dropdown
     available_courses = ["None"] + list(SAMPLE_QUESTIONS.keys())
     selected_course = st.selectbox(
@@ -779,7 +853,6 @@ with st.sidebar:
         help="Select 'None' for general quiz generation without difficulty levels"
     )
 
-    # Add the warning message when a course is selected
     if selected_course != "None":
         st.caption("📝 Make sure you've uploaded the same course PDF")
     
@@ -795,19 +868,19 @@ with st.sidebar:
         hard_count = num_q - easy_count - medium_count
         st.info(f"**Difficulty Distribution:**\n- Easy: {easy_count}\n- Medium: {medium_count}\n- Hard: {hard_count}")
     
-    st.caption("Stack: PyMuPDF + MiniLM + FAISS + Gemini Pro + ReportLab")
+    st.caption("Stack: PyMuPDF + MiniLM + FAISS + Groq + ReportLab + EasyOCR")
 
     if st.button("Build Quiz"):
         if not pdf_file:
             st.error("Please upload a PDF first.")
         else:
-            # Ensure storage directory exists
-            storage_dir = ensure_storage_dir()
+            # Determine storage directory based on note type
+            storage_dir = ensure_storage_dir(note_type)
             
             # Generate unique hash for the PDF
             pdf_hash = get_pdf_hash(pdf_file)
             
-            # Check if we have cached version
+            # Check for cached index
             with st.spinner("Checking for cached index..."):
                 cached_index, cached_chunks = load_faiss_from_disk(pdf_hash, storage_dir)
             
@@ -817,29 +890,34 @@ with st.sidebar:
                 index = cached_index
                 chunks = cached_chunks
                 # For cached files, create readable text files too
-                with st.spinner("Creating readable text files..."):
-                    embedder = load_embedding_model()
-                    embeddings = embedder.encode(chunks, convert_to_numpy=True)
-                    create_readable_chunks_file(pdf_hash, chunks, storage_dir)
-                    create_readable_vectors_file(pdf_hash, embeddings, storage_dir)
+                embedder = load_embedding_model()
+                embeddings = embedder.encode(chunks, convert_to_numpy=True)
+                create_readable_chunks_file(pdf_hash, chunks, storage_dir)
+                create_readable_vectors_file(pdf_hash, embeddings, storage_dir)
             else:
-                # Build new index
-                with st.spinner("Extracting PDF text..."):
-                    text = extract_text_from_pdf(pdf_file)
+                # Need to extract text based on note type
+                if note_type == "Printed Notes":
+                    with st.spinner("Extracting PDF text (printed)..."):
+                        text = extract_text_from_printed_pdf(pdf_file)
+                else:  # Handwritten Notes
+                    st.info("🖋️ Handwritten notes selected. This may take a while depending on PDF size and OCR engine.")
+                    with st.spinner("Running EasyOCR on handwritten PDF... (first run downloads models)"):
+                        pdf_bytes = pdf_file.read()
+                        text = text = extract_text_from_handwritten_pdf(pdf_bytes, ocr_lang, zoom, preprocess)
+                        pdf_file.seek(0)  # reset for potential future use
                 
                 if len(text.strip()) < 50:
-                    st.error("Could not extract enough text from the PDF.")
+                    st.error("Could not extract enough text from the PDF. For handwritten notes, ensure good scan quality and correct OCR language.")
                 else:
                     with st.spinner("Chunking + embedding + indexing..."):
                         chunks = chunk_text(text)
                         embedder = load_embedding_model()
-                        # Build and save to disk with pdf_hash (this automatically creates text files)
-                        index, embeddings = build_faiss_index(chunks, embedder, pdf_hash)
+                        # Build and save to disk with pdf_hash
+                        index, embeddings = build_faiss_index(chunks, embedder, pdf_hash, storage_dir)
             
             # Continue with quiz generation
             if 'index' in locals() and 'chunks' in locals():
-                with st.spinner("Generating questions with Gemini Pro..."):
-                    # Pass selected_course to generate_diverse_quiz
+                with st.spinner("Generating questions with Groq..."):
                     course_for_generation = selected_course if selected_course != "None" else None
                     quiz = generate_diverse_quiz(int(num_q), chunks, index, embedder, top_k, course_for_generation)
                     
@@ -875,27 +953,27 @@ with st.sidebar:
     st.subheader("Cache Management")
     
     if st.button("Clear All Cached Indexes"):
-        storage_dir = ensure_storage_dir()
-        faiss_files = [f for f in os.listdir(storage_dir) if f.endswith('.faiss')]
-        for file in faiss_files:
-            os.remove(f"{storage_dir}/{file}")
-            # Also remove corresponding chunks file
-            chunks_file = file.replace('.faiss', '_chunks.pkl')
-            if os.path.exists(f"{storage_dir}/{chunks_file}"):
-                os.remove(f"{storage_dir}/{chunks_file}")
-            # Also remove corresponding text files
-            txt_chunks_file = file.replace('.faiss', '_chunks.txt')
-            if os.path.exists(f"{storage_dir}/{txt_chunks_file}"):
-                os.remove(f"{storage_dir}/{txt_chunks_file}")
-            txt_vectors_file = file.replace('.faiss', '_vectors.txt')
-            if os.path.exists(f"{storage_dir}/{txt_vectors_file}"):
-                os.remove(f"{storage_dir}/{txt_vectors_file}")
-        st.success(f"Cleared {len(faiss_files)} cached indexes!")
+        storage_root = "faiss_storage"
+        if os.path.exists(storage_root):
+            for sub in os.listdir(storage_root):
+                sub_path = os.path.join(storage_root, sub)
+                if os.path.isdir(sub_path):
+                    for file in os.listdir(sub_path):
+                        os.remove(os.path.join(sub_path, file))
+        st.success("Cleared all cached indexes!")
     
     # Show cache info
-    storage_dir = ensure_storage_dir()
-    cached_files = [f for f in os.listdir(storage_dir) if f.endswith('.faiss')]
-    st.caption(f"📁 Cached PDFs: {len(cached_files)}")
+    printed_cache = 0
+    handwritten_cache = 0
+    storage_root = "faiss_storage"
+    if os.path.exists(storage_root):
+        printed_path = os.path.join(storage_root, "printed_notes")
+        handwritten_path = os.path.join(storage_root, "handwritten_notes")
+        if os.path.exists(printed_path):
+            printed_cache = len([f for f in os.listdir(printed_path) if f.endswith('.faiss')])
+        if os.path.exists(handwritten_path):
+            handwritten_cache = len([f for f in os.listdir(handwritten_path) if f.endswith('.faiss')])
+    st.caption(f"📁 Cached PDFs: Printed: {printed_cache} | Handwritten: {handwritten_cache}")
 
 # Show quiz if available
 quiz = st.session_state.get("quiz")
