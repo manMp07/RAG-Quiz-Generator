@@ -6,3 +6,8 @@ transformers==4.43.3
 torch>=2.2.0
 reportlab==4.2.2
 numpy>=1.26.0
+pymongo
+passlib[bcrypt]
+google-cloud-storage
+openai
+scikit-learn
