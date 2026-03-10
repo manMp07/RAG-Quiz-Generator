@@ -5,7 +5,7 @@ import faiss
 from sentence_transformers import SentenceTransformer
 from openai import OpenAI
 import time
-
+import uuid
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import cm
@@ -42,7 +42,7 @@ with st.sidebar:
         st.switch_page("pages/1_Login.py")
 
 # ------------------------------
-# All the original helper functions (unchanged except where noted)
+# All the original helper functions
 # ------------------------------
 
 def extract_text_from_pdf(file):
@@ -144,7 +144,7 @@ SAMPLE_QUESTIONS = {
                 "question": "The operating system is responsible for?",
                 "options": {
                     "a": "bad-block recovery",
-                    "b": "booting from disk", 
+                    "b": "booting from disk",
                     "c": "disk initialization",
                     "d": "all of the mentioned"
                 }
@@ -153,7 +153,7 @@ SAMPLE_QUESTIONS = {
                 "question": "What is the central, fundamental component of an operating system that manages the system's resources and acts as the bridge between hardware and application software?",
                 "options": {
                     "a": "Shell",
-                    "b": "Compiler", 
+                    "b": "Compiler",
                     "c": "Kernel",
                     "d": "BIOS"
                 }
@@ -162,7 +162,7 @@ SAMPLE_QUESTIONS = {
                 "question": "Which part of the Operating System allows users to interact with the computer, either through commands or a graphical interface?",
                 "options": {
                     "a": "Kernel",
-                    "b": "CPU", 
+                    "b": "CPU",
                     "c": "Shell / User Interface (UI)",
                     "d": "Device Driver"
                 }
@@ -171,7 +171,7 @@ SAMPLE_QUESTIONS = {
                 "question": "The Round Robin (RR) scheduling algorithm relies on a small, fixed unit of time given to each process before it is interrupted. What is this time unit called?",
                 "options": {
                     "a": "Burst Time",
-                    "b": "Turnaround Time", 
+                    "b": "Turnaround Time",
                     "c": "Time Quantum",
                     "d": "Wait Time"
                 }
@@ -180,7 +180,7 @@ SAMPLE_QUESTIONS = {
                 "question": "What are the two fundamental, atomic operations used to manipulate the value of a semaphore?",
                 "options": {
                     "a": "Load and Store",
-                    "b": "Read and Write", 
+                    "b": "Read and Write",
                     "c": "Wait (or P) and Signal (or V)",
                     "d": "Lock and Unlock"
                 }
@@ -191,7 +191,7 @@ SAMPLE_QUESTIONS = {
                 "question": "For an effective operating system, when to check for deadlock?",
                 "options": {
                     "a": "every time a resource request is made at fixed time intervals",
-                    "b": "at fixed time intervals", 
+                    "b": "at fixed time intervals",
                     "c": "every time a resource request is made",
                     "d": "none of the mentioned"
                 }
@@ -200,7 +200,7 @@ SAMPLE_QUESTIONS = {
                 "question": "Which of the four necessary conditions for deadlock is broken by implementing the Banker's Algorithm for resource allocation?",
                 "options": {
                     "a": "Mutual Exclusion",
-                    "b": "Hold and Wait", 
+                    "b": "Hold and Wait",
                     "c": "No Preemption",
                     "d": "Circular Wait"
                 }
@@ -209,7 +209,7 @@ SAMPLE_QUESTIONS = {
                 "question": "In the Round Robin (RR) CPU scheduling algorithm, what is the effect of setting a very small time quantum?",
                 "options": {
                     "a": "It decreases context switching overhead and increases throughput.",
-                    "b": "It makes the algorithm behave similarly to First-Come, First-Served (FCFS).", 
+                    "b": "It makes the algorithm behave similarly to First-Come, First-Served (FCFS).",
                     "c": "It increases context switching overhead, but improves response time for short jobs.",
                     "d": "It leads to internal fragmentation in the main memory."
                 }
@@ -218,7 +218,7 @@ SAMPLE_QUESTIONS = {
                 "question": "What is the fundamental difference between a Thread and a Process in terms of memory space?",
                 "options": {
                     "a": "Processes have individual stacks, while threads share a single common stack.",
-                    "b": "Threads within the same process share the same memory space, while processes have separate memory spaces.", 
+                    "b": "Threads within the same process share the same memory space, while processes have separate memory spaces.",
                     "c": "Processes can only run on a single CPU core, but threads can run on multiple cores.",
                     "d": "Threads are managed by the operating system, but processes are managed by the user application."
                 }
@@ -227,7 +227,7 @@ SAMPLE_QUESTIONS = {
                 "question": "If a Counting Semaphore is initialized to 8, what does this initial value specifically signify to the operating system?",
                 "options": {
                     "a": "The maximum number of processes allowed in the Ready queue.",
-                    "b": "The number of available instances of the shared resource(s).", 
+                    "b": "The number of available instances of the shared resource(s).",
                     "c": "The maximum number of processes allowed to wait for the resource.",
                     "d": "The priority level assigned to the semaphore."
                 }
@@ -238,7 +238,7 @@ SAMPLE_QUESTIONS = {
                 "question": "A counting semaphore S is initialized to a value of 7. A set of processes issues the following operations on S in a specific order: 10 P (wait) operations and 4 V (signal) operations. Assuming P operations decrement the semaphore and block if the value is negative, and V operations increment it, how many processes will be in the blocked queue after all operations are completed?",
                 "options": {
                     "a": "0",
-                    "b": "1", 
+                    "b": "1",
                     "c": "3",
                     "d": "2"
                 }
@@ -247,7 +247,7 @@ SAMPLE_QUESTIONS = {
                 "question": "A file system uses a block size of 4 KB and a block pointer size of 4 bytes. An inode contains 10 direct pointers and 1 single-indirect pointer. What is the maximum file size that can be addressed using this structure? (Note: 1 KB = 1024 bytes)",
                 "options": {
                     "a": "4.04 MB",
-                    "b": "1.04 MB", 
+                    "b": "1.04 MB",
                     "c": "40 KB",
                     "d": "2.04 MB"
                 }
@@ -256,7 +256,7 @@ SAMPLE_QUESTIONS = {
                 "question": "A set of processes arrive with the following arrival times and burst times. The system uses Round Robin scheduling with a time quantum (TQ) of 2 ms. Process | Arrival Time | Burst Time P1 | 0 ms | 5 ms P2 | 1 ms | 3 ms P3 | 2 ms | 4 ms P4 | 4 ms | 2 ms What is the average waiting time for these processes?",
                 "options": {
                     "a": "5.50 ms",
-                    "b": "7.25 ms", 
+                    "b": "7.25 ms",
                     "c": "8.00 ms",
                     "d": "6.75 ms"
                 }
@@ -265,7 +265,7 @@ SAMPLE_QUESTIONS = {
                 "question": "A system with 4 page frames uses the First-In, First-Out (FIFO) page replacement algorithm. The system accesses pages in the following order (reference string): 7, 0, 1, 2, 0, 3, 0, 4, 2, 3, 0, 3, 2 How many page faults will occur?",
                 "options": {
                     "a": "6",
-                    "b": "7", 
+                    "b": "7",
                     "c": "8",
                     "d": "9"
                 }
@@ -274,9 +274,120 @@ SAMPLE_QUESTIONS = {
                 "question": "A disk drive has 200 cylinders, numbered 0 to 199. The disk head is currently at cylinder 53, and the head is moving towards the higher-numbered cylinders (towards 199). The queue of pending requests, in order of arrival, is: 98, 183, 37, 122, 14, 124, 65 Using the C-SCAN (Circular-SCAN) algorithm, what is the total head movement in cylinders?",
                 "options": {
                     "a": "322",
-                    "b": "299", 
+                    "b": "299",
                     "c": "382",
                     "d": "345"
+                }
+            }
+        ]
+    },
+    
+    "DSA": {
+        "Easy": [
+            {
+                "question": "What is the primary operation used to add an element to a stack?",
+                "options": {
+                    "a": "peek",
+                    "b": "Enqueue",
+                    "c": "Pop",
+                    "d": "Push"
+                }
+            },
+            {
+                "question": "What is the principle followed by a queue data structure?",
+                "options": {
+                    "a": "FILO",
+                    "b": "FIFO",
+                    "c": "LIFO",
+                    "d": "FIFO",
+                    "e": "Random Access"
+                }
+            },
+            {
+                "question": "Which operation is used to remove an element from a queue?",
+                "options": {
+                    "a": "peek",
+                    "b": "Enqueue",
+                    "c": "Dequeue",
+                    "d": "Pop"
+                }
+            },
+            {
+                "question": "What happens if you try to pop an element from an empty stack?",
+                "options": {
+                    "a": "The program enters an infinite loop.",
+                    "b": "A 'Stack Underflow' error occurs.",
+                    "c": "The stack automatically resizes to prevent an error.",
+                    "d": "A 'Stack Overflow' error occurs."
+                }
+            },
+            {
+                "question": "Which of the following is/are linear Data Structures?",
+                "options": {
+                    "a": "Stack",
+                    "b": "Queue",
+                    "c": "Tree",
+                    "d": "Linkedlist",
+                    "e": "Array"
+                }
+            },
+            {
+                "question": "What is the output of the following program? #include <iostream> using namespace std; int main() { char *ptr; char Str[] = \"abcdefg\"; ptr = Str; ptr += 5; cout << ptr; return 0; }",
+                "options": {
+                    "a": "cdef",
+                    "b": "fg",
+                    "c": "defg",
+                    "d": "abcd"
+                }
+            }
+        ],
+        "Medium": [
+            {
+                "question": "What is the principle followed by a Stack data structure?",
+                "options": {
+                    "a": "FILO",
+                    "b": "LILO",
+                    "c": "LIFO",
+                    "d": "FIFO",
+                    "e": "Random Access"
+                }
+            },
+            {
+                "question": "What is the time complexity of searching for an element in a balanced binary search tree?",
+                "options": {
+                    "a": "O(1)",
+                    "b": "O(log n)",
+                    "c": "O(n)",
+                    "d": "O(n log n)"
+                }
+            },
+            {
+                "question": "Which of the following sorting algorithms has the worst-case time complexity of O(n^2) but performs well on nearly sorted data?",
+                "options": {
+                    "a": "Merge Sort",
+                    "b": "Quick Sort",
+                    "c": "Insertion Sort",
+                    "d": "Heap Sort"
+                }
+            }
+        ],
+        "Hard": [
+            {
+                "question": "Choose the right option. int* x, y;",
+                "options": {
+                    "a": "x is a pointer to a integer, y is a integer",
+                    "b": "y is a pointer to a integer, x is a integer",
+                    "c": "both x and y are pointers to integer types",
+                    "d": "y is a pointer to a integer"
+                }
+            },
+            {
+                "question": "What is the output of the following program? #include <iostream> using namespace std; int main() { int arr[] = { 4, 5, 6, 7 }; int* p = (arr + 2); cout << *p + 1; return 0; }",
+                "options": {
+                    "a": "16",
+                    "b": "7",
+                    "c": "14",
+                    "d": "error"
                 }
             }
         ]
@@ -759,10 +870,17 @@ with st.sidebar:
                 with st.spinner("Generating questions with Groq..."):
                     course_for_generation = selected_course if selected_course != "None" else None
                     quiz = generate_diverse_quiz(int(num_q), chunks, index, embedder, top_k, course_for_generation)
+                    
+                    # 👇 NEW: Assign a unique temp_id to each question
+                    if quiz:
+                        for q in quiz:
+                            q['temp_id'] = str(uuid.uuid4())
+                    
                     # Store in session state for editing
                     st.session_state["editable_quiz"] = quiz
                     st.session_state["current_pdf_hash"] = pdf_hash
                     st.session_state["current_course"] = selected_course
+                    
                     if quiz:
                         st.success(f"✅ Generated {len(quiz)} unique questions! You can now edit below.")
                     else:
@@ -782,12 +900,13 @@ if "editable_quiz" in st.session_state and st.session_state["editable_quiz"]:
 
     quiz = st.session_state["editable_quiz"]
     updated_quiz = []
-    
-    for idx, q in enumerate(quiz):
+
+    for q in quiz:
+        temp_id = q['temp_id']
         with st.container(border=True):
             cols = st.columns([0.8, 0.2])
             with cols[0]:
-                st.markdown(f"**Q{idx+1}: {q['question']}**")
+                st.markdown(f"**Q: {q['question']}**")
                 st.markdown(f"A) {q['options'][0]}")
                 st.markdown(f"B) {q['options'][1]}")
                 st.markdown(f"C) {q['options'][2]}")
@@ -800,22 +919,22 @@ if "editable_quiz" in st.session_state and st.session_state["editable_quiz"]:
                     "Difficulty",
                     options=["Easy", "Medium", "Hard", "Not Specified"],
                     index=["Easy", "Medium", "Hard", "Not Specified"].index(current_diff),
-                    key=f"diff_{idx}"
+                    key=f"diff_{temp_id}"
                 )
-                # Remove button
-                if st.button("🗑️ Remove", key=f"remove_{idx}"):
-                    st.session_state[f"remove_{idx}"] = True
-                    st.rerun()
-                # Store updated difficulty
                 q["difficulty"] = new_diff
-            
+
+                # Remove button
+                if st.button("🗑️ Remove", key=f"remove_btn_{temp_id}"):
+                    st.session_state[f"remove_flag_{temp_id}"] = True
+                    st.rerun()
+
             # Check if this question should be removed
-            if not st.session_state.get(f"remove_{idx}", False):
+            if not st.session_state.get(f"remove_flag_{temp_id}", False):
                 updated_quiz.append(q)
             else:
-                # Clear the removal flag for next render
-                st.session_state.pop(f"remove_{idx}", None)
-    
+                # Clear the flag for future runs
+                st.session_state.pop(f"remove_flag_{temp_id}", None)
+
     # Update session state with modified quiz
     st.session_state["editable_quiz"] = updated_quiz
 
@@ -831,12 +950,10 @@ if "editable_quiz" in st.session_state and st.session_state["editable_quiz"]:
                     questions=updated_quiz
                 )
                 st.success(f"✅ Saved {len(updated_quiz)} questions to your question bank!")
-                # Optionally clear the editable quiz after save
-                # st.session_state["editable_quiz"] = []
             except Exception as e:
                 st.error(f"Error saving questions: {e}")
 
-    # Optional: Preview button to see current list
+    # Optional: Preview current questions
     with st.expander("Preview current questions"):
         for i, q in enumerate(updated_quiz):
             st.write(f"{i+1}. {q['question']} [{q['difficulty']}]")
