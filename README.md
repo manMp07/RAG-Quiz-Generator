@@ -1,24 +1,25 @@
-# 🧠 Enhanced RAG-Based MCQ Quiz Generator
+# 🧠 Enhanced RAG-Based MCQ Quiz Generator with Faculty Authentication & Question Bank
 
-A **Retrieval-Augmented Generation (RAG)** powered MCQ Quiz Generator that creates **high-quality, difficulty-aware multiple-choice questions** directly from user-uploaded PDF notes.
-
-This project goes beyond simple *PDF → LLM* approaches by using **semantic retrieval, vector databases, deduplication, caching, and controlled prompt engineering** to generate **accurate, diverse, and exam-level MCQs**.
+A **Retrieval-Augmented Generation (RAG)** powered MCQ Quiz Generator that creates **high-quality, difficulty-aware multiple-choice questions** directly from user-uploaded PDF notes.  
+This system adds **faculty authentication**, a **persistent question bank**, **editable quizzes**, and **custom PDF exports** to the core RAG pipeline.
 
 ---
 
 ## 🚀 Key Features
 
+- 🔐 **Faculty Authentication** – Register/Login using email & password (MongoDB, bcrypt hashing).
 - 📄 Upload any **PDF notes / study material**
 - 🧩 Automatic **text chunking with overlap**
-- 🔎 **Semantic retrieval** using FAISS vector database
-- 🧠 MCQ generation using **Gemini LLM** based strictly on retrieved context
-- 🎯 **Difficulty-based questions** (Easy / Medium / Hard)
+- 🔎 **Semantic retrieval** using FAISS vector database (cached in MongoDB cloud)
+- 🧠 MCQ generation using **Groq LLM (Llama 3.3 70B)** based strictly on retrieved context
+- 🎯 **Difficulty-based questions** (Easy / Medium / Hard) with custom seed queries & few‑shot examples
 - 🧪 **Deduplication** using semantic similarity + hashing
-- ⚡ **FAISS caching** for fast repeated usage
+- ⚡ **FAISS caching** in MongoDB for fast repeated usage
 - 🧾 **Readable chunk & vector files** for transparency
-- 📊 Interactive quiz attempt with scoring
-- 📄 Export quiz as **PDF with answer key**
-- 🧹 Cache management from UI
+- ✏️ **Editable Quiz** – Change difficulty per question, remove unwanted questions
+- 💾 **Save Questions to Database** – Build a personal question bank (grouped by course)
+- 📚 **Previous Questions Page** – Browse saved questions by course, select any subset, and generate a **custom PDF quiz** (questions only + separate answer key page)
+- 🧹 **Cache management** (clear cached FAISS indexes)
 
 ---
 
@@ -48,45 +49,44 @@ Chunking (900 words + overlap)
    ↓
 Embeddings (MiniLM – 384D)
    ↓
-FAISS Vector Store (Cached)
+FAISS Vector Store (Cached in MongoDB)
    ↓
 Seed Query → Semantic Retrieval
    ↓
 Retrieved Context
    ↓
-Gemini LLM (MCQ Generation)
+Groq LLM (Llama 3.3 70B) + Few‑shot samples
    ↓
 Deduplication & Validation
    ↓
-Quiz UI + PDF Export
+Editable Quiz UI → Save to Question Bank
+   ↓
+Previous Questions → Custom PDF Export
 ```
 
 ---
-
 ## 🧱 Tech Stack
 
-- **Frontend / UI:** Streamlit
+- **Frontend / UI:** Streamlit (multi‑page)
+- **Authentication:** MongoDB + bcrypt (passlib)
 - **PDF Parsing:** PyMuPDF (fitz)
 - **Embeddings:** sentence-transformers (all-MiniLM-L6-v2)
-- **Vector Database:** FAISS
-- **LLM:** Google Gemini (gemini-2.0-flash)
+- **Vector Database:** FAISS (cached in MongoDB as binary files)
+- **LLM:** Groq API (Llama 3.3 70B) – fast inference
 - **Similarity Checking:** Scikit-learn (Cosine Similarity)
 - **PDF Generation:** ReportLab
-- **Caching & Storage:** Local Disk (FAISS + Pickle)
+- **Caching & Storage:** MongoDB GridFS (for FAISS & chunks) + local readable files
 
 ---
 
 ## 📄 PDF Processing Pipeline
 
 1. Extracts raw text from the uploaded PDF
-2. Splits text into overlapping chunks (900 words)
+2. Splits text into overlapping chunks (900 words, 50 overlap)
 3. Generates 384-dimensional embeddings for each chunk
 4. Normalizes and stores embeddings in FAISS
-5. Automatically saves:
-   - FAISS index (`.faiss`)
-   - Chunk data (`.pkl`)
-   - Readable text chunks (`_chunks.txt`)
-   - Readable vector embeddings (`_vectors.txt`)
+5. Automatically caches the FAISS index + chunks in **MongoDB** (per user)
+6. Creates local readable `.txt` files for first 5 chunks and vectors (transparency)
 
 This ensures **performance, explainability, and reproducibility**.
 
@@ -94,16 +94,16 @@ This ensures **performance, explainability, and reproducibility**.
 
 ## 🎯 Difficulty-Based MCQ Generation
 
-If a course is selected:
+If a course is selected (e.g., "Operating Systems", "DSA"):
 - Questions are distributed as:
   - **Easy:** ~33%
   - **Medium:** ~33%
-  - **Hard:** Remaining
+  - **Hard:** remaining
 
 Each difficulty level:
-- Uses **custom seed queries**
-- Uses **sample MCQs as few-shot references**
-- Forces Gemini to match **difficulty level and complexity**
+- Uses **custom seed queries** (e.g., "key facts" for Easy, "numerical data" for Hard)
+- Uses **sample MCQs as few-shot references** (hardcoded for each course & difficulty)
+- Forces the LLM to match **difficulty level and complexity**
 
 This produces **exam-oriented MCQs**, not random questions.
 
@@ -118,8 +118,8 @@ Two-layer deduplication ensures uniqueness:
 - Prevents exact duplicates
 
 ### 2️⃣ Semantic Similarity
-- Cosine similarity on question embeddings
-- Skips questions above similarity threshold
+- Cosine similarity on question embeddings (MiniLM)
+- Skips questions above similarity threshold (default 0.85)
 
 ✅ Result: **No repeated or reworded MCQs**
 
@@ -127,7 +127,7 @@ Two-layer deduplication ensures uniqueness:
 
 ## 🧪 Transparency & Explainability
 
-For every uploaded PDF, the system automatically generates:
+For every uploaded PDF, the system automatically generates local text files:
 
 - `*_chunks.txt` → First 5 extracted text chunks
 - `*_vectors.txt` → First 5 full 384-dimensional embeddings
@@ -139,33 +139,38 @@ This makes the RAG pipeline **fully transparent**, ideal for:
 
 ---
 
-## 📊 Quiz Attempt & Evaluation
+## ✏️ Editable Quiz & Question Bank
 
-- Interactive quiz interface
-- Difficulty tags per question
-- Overall score calculation
-- Difficulty-wise performance analysis
-- Detailed feedback for each question
+After quiz generation, faculty can:
+- **Change difficulty** of any question via dropdown
+- **Remove questions** individually
+- **Save the final set** to a personal question bank (MongoDB)
+
+The saved questions are stored with:
+- Course name
+- Question text, options, correct answer, difficulty
+- User ID and timestamp
 
 ---
 
-## 📄 PDF Export
+## 📚 Previous Questions & Custom PDF Export
 
-- Generates a professional PDF containing:
-  - MCQ questions
-  - Difficulty indicators
-  - Complete answer key
-- Suitable for:
-  - Offline exams
-  - Faculty review
-  - Sharing with students
+A separate **"Previous Questions"** page allows faculty to:
+- View all saved questions **grouped by course**
+- See each question with its options, correct answer, and difficulty
+- **Select any subset of questions** using checkboxes
+- Generate a **printable PDF** containing:
+  - Only the selected questions (no difficulty labels)
+  - A separate **answer key page** at the end
+
+This is perfect for creating custom quizzes, practice tests, or exam papers.
 
 ---
 
 ## ⚡ Performance Optimization
 
 - PDF hashing avoids duplicate processing
-- Cached FAISS index reused automatically
+- Cached FAISS index reused automatically (per user, per PDF)
 - Embeddings computed only once per PDF
 - Manual cache clearing available via UI
 
@@ -177,13 +182,15 @@ Create a secrets file:
 
 ```toml
 # .streamlit/secrets.toml
-GEMINI_API_KEY = "your_api_key_here"
+MONGODB_URI = "mongodb+srv://<username>:<password>@cluster.mongodb.net/"
+DB_NAME = "quiz_app"
+GROQ_API_KEY = "your_groq_api_key"
 ```
 
 Install dependencies:
 
 ```bash
-pip install streamlit faiss-cpu sentence-transformers pymupdf reportlab scikit-learn google-generativeai
+pip install streamlit faiss-cpu sentence-transformers pymupdf reportlab scikit-learn openai pymongo passlib
 ```
 
 Run the application:
@@ -198,9 +205,8 @@ streamlit run app.py
 
 - Exam preparation platforms
 - Faculty question paper generation
-- E-learning systems
+- E-learning systems with teacher dashboards
 - Academic RAG demonstrations
-- NLP + IR course projects
 
 ---
 
@@ -210,11 +216,12 @@ This project showcases a **production-grade Retrieval-Augmented Generation syste
 
 - Information Retrieval (FAISS)
 - NLP Embeddings
-- Large Language Models
+- Large Language Models (Groq)
 - Deduplication & Evaluation
-- PDF Export & UI
+- Faculty Authentication & Question Banking
+- Custom PDF Export
 
-It clearly answers the question:
+It clearly answers the question:  
 > *“Why not just upload the PDF to an LLM?”*
 
 ⭐ If you find this project useful, consider starring the repository!
