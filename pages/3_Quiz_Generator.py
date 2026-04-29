@@ -391,6 +391,114 @@ SAMPLE_QUESTIONS = {
                 }
             }
         ]
+    },
+
+    "Mobile Computing": {
+        "Easy": [
+            {
+                "question": "Which of the following is not a component of Mobile Computing?",
+                "options": {
+                    "a": "Smartphone",
+                    "b": "Laptop",
+                    "c": "Desktop",
+                    "d": "Wearables"
+                }
+            },
+            {
+                "question": "Which of the following is not a mitigation technique for High bit-error rates?",
+                "options": {
+                    "a": "Error correction",
+                    "b": "increasing transmit power",
+                    "c": "link-layer retransmission",
+                    "d": "Ethernet bridging"
+                }
+            },
+            {
+                "question": "Which of the following is not a Random Access Protocol?",
+                "options": {
+                    "a": "TDMA",
+                    "b": "Aloha",
+                    "c": "Slotted Aloha",
+                    "d": "CSMA"
+                }
+            },
+            {
+                "question": "Which of the following is likely a correct combination of SIFS and DIFS for CSMA/CA with Ack?",
+                "options": {
+                    "a": "DIFS: 10μs, SIFS: 20μs",
+                    "b": "DIFS: 20μs, SIFS: 10μs",
+                    "c": "DIFS: 50μs, SIFS: 10μs",
+                    "d": "DIFS: 10μs, SIFS: 50μs"
+                }
+            }
+        ],
+        "Medium": [
+            {
+                "question": "Which of these is not a terminology associated with Mobile IP?",
+                "options": {
+                    "a": "Home agent",
+                    "b": "Secondary agent",
+                    "c": "Correspondent",
+                    "d": "Care-of-address"
+                }
+            },
+            {
+                "question": "In Mobile IP, what is the primary function of the Home Agent?",
+                "options": {
+                    "a": "To assign IP addresses to mobile nodes",
+                    "b": "To tunnel packets to the mobile node's care-of address",
+                    "c": "To encrypt all communication",
+                    "d": "To perform handoff between base stations"
+                }
+            },
+            {
+                "question": "What does the term 'handoff' refer to in mobile computing?",
+                "options": {
+                    "a": "Turning off the mobile device",
+                    "b": "Transferring an ongoing call or data session from one base station to another",
+                    "c": "Switching between Wi-Fi and cellular networks manually",
+                    "d": "Encrypting data during transmission"
+                }
+            },
+            {
+                "question": "In CSMA/CA, what is the purpose of the Network Allocation Vector (NAV)?",
+                "options": {
+                    "a": "To store the IP address of the sender",
+                    "b": "To indicate the amount of time the medium will remain busy",
+                    "c": "To allocate bandwidth to different stations",
+                    "d": "To perform error correction"
+                }
+            }
+        ],
+        "Hard": [
+            {
+                "question": "In a cellular system using Frequency Division Multiple Access (FDMA), what happens if the guard bands between channels are too small?",
+                "options": {
+                    "a": "Increased co-channel interference",
+                    "b": "Increased adjacent channel interference",
+                    "c": "Reduced handoff latency",
+                    "d": "Higher battery consumption"
+                }
+            },
+            {
+                "question": "Which of the following is a major challenge in mobile ad hoc networks (MANETs) that is not typically present in infrastructure-based wireless networks?",
+                "options": {
+                    "a": "Signal fading",
+                    "b": "Dynamic topology due to node mobility",
+                    "c": "Limited bandwidth",
+                    "d": "Interference from other devices"
+                }
+            },
+            {
+                "question": "In the context of GSM, what is the purpose of the Authentication Center (AuC)?",
+                "options": {
+                    "a": "To encrypt voice calls",
+                    "b": "To authenticate the mobile subscriber and generate encryption keys",
+                    "c": "To manage handovers between cells",
+                    "d": "To store the subscriber's phonebook"
+                }
+            }
+        ]
     }
 }
 

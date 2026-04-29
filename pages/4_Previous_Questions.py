@@ -62,52 +62,162 @@ for course, qlist in questions_by_course.items():
 
 # PDF generation function (copied from generator, but can be placed here)
 def make_selected_questions_pdf(questions, title="Custom Quiz"):
-    """Generate PDF for selected questions (no difficulties, answer key at end)."""
+    """Generate PDF with proper hanging indents, spacing, and full-question page breaks."""
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=A4)
     width, height = A4
     margin = 2 * cm
-    x = margin
+    left_x = margin
+    right_limit = width - margin
     y = height - margin
 
-    def draw_wrapped(text, y, leading=14, indent=0):
-        max_width = width - 2*margin - indent
-        wrapped = textwrap.wrap(text, width=95)
-        for line in wrapped:
-            if y < margin + 2*cm:
+    c.setFont("Helvetica", 11)
+    line_height = 14
+    question_text_indent = 20   # space for "1. "
+    option_label_indent = 0
+    option_text_indent = 24     # space for "A) "
+    extra_spacing = 4
+    bottom_margin = margin
+
+    # Helper: draw wrapped text with hanging indent, return new y and number of lines
+    def draw_wrapped_with_hanging(text, x_start, hanging_indent, y_pos, max_width, leading):
+        lines = []
+        words = text.split()
+        current_line = ""
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            if c.stringWidth(test_line, "Helvetica", 11) <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        if current_line:
+            lines.append(current_line)
+        
+        for i, line in enumerate(lines):
+            if y_pos < bottom_margin + leading:
+                # Not enough space – caller should have prevented this
                 c.showPage()
-                y = height - margin
-            c.drawString(x + indent, y, line)
-            y -= leading
-        return y
+                c.setFont("Helvetica", 11)
+                y_pos = height - margin
+            if i == 0:
+                c.drawString(x_start, y_pos, line)
+            else:
+                c.drawString(hanging_indent, y_pos, line)
+            y_pos -= leading
+        return y_pos, len(lines)
+
+    # Calculate total height needed for a question (including spacing)
+    def calculate_question_height(question, max_text_width, max_opt_width):
+        # Question text lines
+        text_part = question['question_text']
+        diff = question.get('difficulty', 'Not Specified')
+        if diff != 'Not Specified':
+            text_part += f" [{diff}]"
+        # Wrapping logic (same as draw)
+        q_lines = []
+        words = text_part.split()
+        current = ""
+        for w in words:
+            test = current + (" " if current else "") + w
+            if c.stringWidth(test, "Helvetica", 11) <= max_text_width:
+                current = test
+            else:
+                if current:
+                    q_lines.append(current)
+                current = w
+        if current:
+            q_lines.append(current)
+        height = len(q_lines) * line_height + extra_spacing  # space before options
+
+        # Options
+        for opt in question['options']:
+            opt_lines = []
+            words = opt.split()
+            current = ""
+            for w in words:
+                test = current + (" " if current else "") + w
+                if c.stringWidth(test, "Helvetica", 11) <= max_opt_width:
+                    current = test
+                else:
+                    if current:
+                        opt_lines.append(current)
+                    current = w
+            if current:
+                opt_lines.append(current)
+            height += len(opt_lines) * line_height + extra_spacing
+        # Add one line of spacing after the question
+        height += line_height
+        return height
 
     # Title
     c.setFont("Helvetica-Bold", 16)
-    c.drawString(x, y, title)
+    c.drawString(left_x, y, title)
     y -= 24
     c.setFont("Helvetica", 11)
 
-    # Questions
-    for i, q in enumerate(questions, 1):
-        y = draw_wrapped(f"{i}. {q['question_text']}", y, leading=14)
-        for label, opt in zip(["A", "B", "C", "D"], q["options"]):
-            y = draw_wrapped(f"   {label}) {opt}", y, leading=14)
-        y -= 8
-        if y < margin + 2*cm:
+    max_text_width = right_limit - (left_x + question_text_indent)
+    max_opt_width = right_limit - (left_x + option_text_indent)
+
+    for idx, q in enumerate(questions, 1):
+        # Calculate required height for this question
+        required = calculate_question_height(q, max_text_width, max_opt_width)
+        # Check if there's enough space on current page
+        if y - required < bottom_margin:
             c.showPage()
             y = height - margin
+            c.setFont("Helvetica", 11)
 
-    # Answer Key
+        # Draw the question
+        number_part = f"{idx}."
+        text_part = q['question_text']
+        diff = q.get('difficulty', 'Not Specified')
+        if diff != 'Not Specified':
+            text_part += f" [{diff}]"
+
+        # Question number
+        c.drawString(left_x, y, number_part)
+        # Question text
+        y, _ = draw_wrapped_with_hanging(
+            text_part,
+            left_x + question_text_indent,
+            left_x + question_text_indent,
+            y,
+            max_text_width,
+            line_height
+        )
+        y -= extra_spacing
+
+        # Options
+        for label, opt in zip(["A", "B", "C", "D"], q["options"]):
+            label_part = f"{label})"
+            c.drawString(left_x + option_label_indent, y, label_part)
+            y, _ = draw_wrapped_with_hanging(
+                opt,
+                left_x + option_text_indent,
+                left_x + option_text_indent,
+                y,
+                max_opt_width,
+                line_height
+            )
+            y -= extra_spacing
+
+        # Space after question
+        y -= line_height
+
+    # Answer Key – new page
     c.showPage()
     y = height - margin
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(x, y, "Answer Key")
+    c.drawString(left_x, y, "Answer Key")
     y -= 20
     c.setFont("Helvetica", 11)
     for i, q in enumerate(questions, 1):
-        answer_letter = q["correct_answer"]
-        answer_text = f"{i}. {answer_letter}"
-        y = draw_wrapped(answer_text, y, leading=14)
+        ans_text = f"{i}. {q['correct_answer']}"
+        y, _ = draw_wrapped_with_hanging(ans_text, left_x, left_x, y, right_limit - left_x, line_height)
+        y -= 2
+
     c.save()
     buffer.seek(0)
     return buffer
@@ -117,7 +227,7 @@ if selected_questions:
     st.success(f"Selected {len(selected_questions)} questions.")
     if st.button("📄 Create Quiz PDF from Selected"):
         # Generate PDF
-        pdf_buffer = make_selected_questions_pdf(selected_questions, title=f"Custom Quiz - {course}")
+        pdf_buffer = make_selected_questions_pdf(selected_questions, title=f"Custom Quiz - Mobile Computing")
         st.download_button(
             label="⬇️ Download Quiz PDF",
             data=pdf_buffer,
